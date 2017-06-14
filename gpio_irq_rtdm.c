@@ -8,11 +8,12 @@
 #include <linux/module.h>
 #include <linux/gpio.h>
 #include <linux/types.h>
+#include <linux/interrupt.h>
 
 // see https://lkml.org/lkml/2014/3/19/59
-#define smp_mb__before_atomic smp_mb__before_clear_bit
+//#define smp_mb__before_atomic smp_mb__before_clear_bit
 
-#include <rtdm/rtdm_driver.h>
+#include <rtdm/driver.h>
 #include "gpio-irq.h"
 
 // compile in code for irq handler timing pin and counters
@@ -63,42 +64,43 @@ static int irq_handler(rtdm_irq_t *irq_handle)
     return RTDM_IRQ_HANDLED;
 }
 
-int gpio_irq_open(struct rtdm_dev_context *context, rtdm_user_info_t *user_info, int oflags)
+int gpio_irq_open(struct rtdm_fd *user_info, int oflags)
 {
+    struct rtdm_dev_context* context = rtdm_fd_to_context(user_info);
     struct device_ctx *ctx = (struct device_ctx *) context->dev_private;
     ctx->gpio_irq = -1;  // mark as unbound
     return 0;
 }
 
-int gpio_irq_close(struct rtdm_dev_context *context, rtdm_user_info_t *user_info)
+void gpio_irq_close(struct rtdm_fd *user_info)
 {
+    struct rtdm_dev_context* context = rtdm_fd_to_context(user_info);
     int rc;
     struct device_ctx *ctx = (struct device_ctx *) context->dev_private;
 
     if (ctx->gpio_irq < 0)  {
 	printk(KERN_INFO "gpio_irq_close:  closing unbound fd\n");
-	return 0;
+	return;
     }
     rc = rtdm_irq_disable(&ctx->irq_handle);
     if (rc < 0) {
 	printk(KERN_WARNING "rtdm_irq_disable:  %d\n", rc);
-	return rc;
+	return;
     }
     rc = rtdm_irq_free(&ctx->irq_handle);
     if (rc < 0) {
 	printk(KERN_WARNING "rtdm_irq_free:  %d\n", rc);
-	return rc;
+	return;
     }
     rtdm_event_destroy(&ctx->gpio_event);
-    return 0;
 }
 
 
-static ssize_t gpio_irq_ioctl_rt(struct rtdm_dev_context* context,
-				 rtdm_user_info_t* user_info,
+static ssize_t gpio_irq_ioctl_rt(struct rtdm_fd* user_info,
 				 unsigned int request,
 				 void __user* arg)
 {
+    struct rtdm_dev_context* context = rtdm_fd_to_context(user_info);
     struct device_ctx *ctx = (struct device_ctx *) context->dev_private;
     int rc;
     int pin, irq;
@@ -167,35 +169,34 @@ static ssize_t gpio_irq_ioctl_rt(struct rtdm_dev_context* context,
     return 0;
 }
 
-static struct rtdm_device device = {
- struct_version:         RTDM_DEVICE_STRUCT_VER,
- device_flags:           RTDM_NAMED_DEVICE,
- context_size:           sizeof(struct device_ctx),
- device_name:            DEVICE_NAME,
- open_rt:                NULL,
- open_nrt:               gpio_irq_open,
+// migration to Xenomai 3 of this structure required heavy assistance from http://xenomai.org/documentation/xenomai-3/html/MIGRATION/index.html
+static struct rtdm_driver driver = {
+.profile_info = RTDM_PROFILE_INFO(gpio_irq,
+				RTDM_CLASS_EXPERIMENTAL,
+				RTDM_SUBCLASS_GPIO_IRQ,
+				42
+		),
+.device_flags = RTDM_NAMED_DEVICE,
+.device_count = 2,
+.context_size = sizeof(struct device_ctx),
 
- ops:{
-    close_rt:       NULL,
-    close_nrt:      gpio_irq_close,
+.ops = {
+	.open = gpio_irq_open,
+	.close = gpio_irq_close,
+	.ioctl_rt = gpio_irq_ioctl_rt,
+	.ioctl_nrt = NULL,
   
-    ioctl_rt:       gpio_irq_ioctl_rt,
-    ioctl_nrt:      NULL,
-  
-    read_rt:        NULL,
-    read_nrt:       NULL,
+	.read_rt = NULL,
+	.read_nrt = NULL,
 
-    write_rt:       NULL,
-    write_nrt:      NULL,   
+	.write_rt = NULL,
+	.write_nrt = NULL,   
     },
+};
 
- device_class:           RTDM_CLASS_EXPERIMENTAL,
- device_sub_class:       RTDM_SUBCLASS_GPIO_IRQ,
- driver_name:            "gpio_irq_rtdm",
- driver_version:         RTDM_DRIVER_VER(0, 0, 0),
- peripheral_name:        "GPIO_IRQ RTDM",
- provider_name:          "machinekit",
- proc_name:              device.device_name,
+static struct rtdm_device device = {
+	.driver = &driver,
+	.label = DEVICE_NAME,
 };
 
 int __init gpio_irq_init(void)
@@ -209,7 +210,7 @@ int __init gpio_irq_init(void)
 
 void __exit gpio_irq_exit(void)
 {
-    rtdm_dev_unregister (&device, 1000);
+    rtdm_dev_unregister (&device);
 }
 
 module_init(gpio_irq_init);

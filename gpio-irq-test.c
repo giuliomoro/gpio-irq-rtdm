@@ -6,6 +6,8 @@
 
 #include <native/task.h>
 #include <native/timer.h>
+#include <rtdm/rtdm.h>
+#include <rtdk.h>
 #include "gpio-irq.h"
 
 RT_TASK demo_task;

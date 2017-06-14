@@ -10,10 +10,11 @@ endif
 PWD:= $(shell pwd)
 KDIR := /lib/modules/$(shell uname -r)/build
 CC := $(shell $(XENO_CONFIG) --skin=native --cc)
-STD_CFLAGS  := $(shell $(XENO_CONFIG) --skin=native --cflags) -I. -g
-STD_LDFLAGS := $(shell $(XENO_CONFIG) --skin=native --ldflags) -g -lrtdm
+STD_CFLAGS  := $(shell $(XENO_CONFIG) --skin=native --skin=rtdm --cflags) -I. -g
+STD_LDFLAGS := $(shell $(XENO_CONFIG) --skin=native --skin=rtdm --ldflags) -g 
 
-EXTRA_CFLAGS += $(shell xeno-config --skin=native --cflags)
+EXTRA_CFLAGS += $(shell $(XENO_CONFIG) --skin=native --skin=rtdm --cflags)
+
 EXTRA_CFLAGS += $(CFLAGS)
 
 obj-m += gpio_irq_rtdm.o
