@@ -17,7 +17,7 @@
 #include "gpio-irq.h"
 
 // compile in code for irq handler timing pin and counters
-#define STATS  1 
+#define STATS 1
 
 #define RTDM_SUBCLASS_GPIO_IRQ       4711
 #define DEVICE_NAME                 "gpio_irq"
@@ -79,23 +79,30 @@ void gpio_irq_close(struct rtdm_fd *user_info)
     struct device_ctx *ctx = (struct device_ctx *) context->dev_private;
 
     if (ctx->gpio_irq < 0)  {
-	printk(KERN_INFO "gpio_irq_close:  closing unbound fd\n");
+	printk(KERN_INFO "GPIO_IRQ: gpio_irq_close:  closing unbound fd\n");
 	return;
     }
     rc = rtdm_irq_disable(&ctx->irq_handle);
     if (rc < 0) {
-	printk(KERN_WARNING "rtdm_irq_disable:  %d\n", rc);
+	printk(KERN_WARNING "GPIO_IRQ: rtdm_irq_disable:  %d\n", rc);
 	return;
     }
     rc = rtdm_irq_free(&ctx->irq_handle);
     if (rc < 0) {
-	printk(KERN_WARNING "rtdm_irq_free:  %d\n", rc);
+	printk(KERN_WARNING "GPIO_IRQ: rtdm_irq_free:  %d\n", rc);
 	return;
     }
     rtdm_event_destroy(&ctx->gpio_event);
 }
 
 
+static ssize_t gpio_irq_ioctl(struct rtdm_fd* user_info,
+				 unsigned int request,
+				 void __user* arg)
+{
+    printk(KERN_WARNING "GPIO_IRQ: non real time call to ioctl\n");
+    return 0;
+}
 static ssize_t gpio_irq_ioctl_rt(struct rtdm_fd* user_info,
 				 unsigned int request,
 				 void __user* arg)
@@ -106,12 +113,16 @@ static ssize_t gpio_irq_ioctl_rt(struct rtdm_fd* user_info,
     int pin, irq;
     struct gpio_irq_data gid;
 
+    static int count = 0;
+    printk(KERN_WARNING "GPIO_IRQ: (%d) requesting: %d\n", count, request);
+    ++count;
+
     switch (request) {
 	
     case GPIO_IRQ_BIND:
 	rtdm_safe_copy_from_user(user_info, &gid, arg,
 				 sizeof(struct gpio_irq_data));
-	printk(KERN_INFO "gpio_irq_ioctl_rt(GPIO_IRQ_BIND) pin=%d falling=%d\n",
+	printk(KERN_INFO "GPIO_IRQ: gpio_irq_ioctl_rt(GPIO_IRQ_BIND) pin=%d falling=%d\n",
 	       gid.pin, gid.falling);
 	irq = gpio_to_irq(gid.pin);
 	irq_set_irq_type(irq, gid.falling ?
@@ -124,7 +135,7 @@ static ssize_t gpio_irq_ioctl_rt(struct rtdm_fd* user_info,
 			      ctx->name,
 			      ctx);
 	if (rc < 0) {
-	    printk(KERN_WARNING "rtdm_irq_request: cant register irq %d for pin %d - %d\n",
+	    printk(KERN_WARNING "GPIO_IRQ: rtdm_irq_request: cant register irq %d for pin %d - %d\n",
 		   irq, gid.pin, rc);
 	    ctx->gpio_irq = -1;
 	    return rc;
@@ -132,11 +143,12 @@ static ssize_t gpio_irq_ioctl_rt(struct rtdm_fd* user_info,
 	rtdm_event_init(&ctx->gpio_event, 0);
 	rc = rtdm_irq_enable(&ctx->irq_handle);
 	if (rc < 0) {
-	    printk(KERN_WARNING "rtdm_irq_enable: cant enable irq for pin %d - %d\n", gid.pin, rc);
+	    printk(KERN_WARNING "GPIO_IRQ: rtdm_irq_enable: cant enable irq for pin %d - %d\n", gid.pin, rc);
 	    ctx->gpio_irq = -1;
 	    return rc;
 	}
 	ctx->gpio_irq = irq;
+        printk(KERN_WARNING "GPIO_IRQ: successfully enabled pin");
 	break;
 
     case GPIO_IRQ_PIN_SET:
@@ -156,16 +168,21 @@ static ssize_t gpio_irq_ioctl_rt(struct rtdm_fd* user_info,
 	    
     case GPIO_IRQ_PIN_WAIT:
 	if ((rc = rtdm_event_wait (&ctx->gpio_event)) < 0)
+        {
+            printk(KERN_WARNING "rtdm_event_wait failed");
 	    return rc;
+        }
 #if STATS    
 	completions++;
-#endif	
+#endif
 	break;
 
     default:
-	printk(KERN_WARNING "ioctl: invalid value %d\n", request);
+	printk(KERN_WARNING "GPIO_IRQ: ioctl: invalid value %d\n", request);
 	return -EINVAL;
     }
+
+
     return 0;
 }
 
@@ -184,7 +201,7 @@ static struct rtdm_driver driver = {
 	.open = gpio_irq_open,
 	.close = gpio_irq_close,
 	.ioctl_rt = gpio_irq_ioctl_rt,
-	.ioctl_nrt = NULL,
+	.ioctl_nrt = gpio_irq_ioctl,
   
 	.read_rt = NULL,
 	.read_nrt = NULL,
@@ -201,9 +218,10 @@ static struct rtdm_device device = {
 
 int __init gpio_irq_init(void)
 {
+    printk(KERN_WARNING "GPIO_IRQ: Loading gpio_irq\n");
 #if STATS
     if (timing_pin)
-	printk(KERN_WARNING "timing_pin has no effect - #define STATS 1 to enable\n");
+	printk(KERN_WARNING "GPIO_IRQ: timing_pin has no effect - #define STATS 1 to enable\n");
 #endif
     return rtdm_dev_register(&device); 
 }
@@ -211,6 +229,7 @@ int __init gpio_irq_init(void)
 void __exit gpio_irq_exit(void)
 {
     rtdm_dev_unregister (&device);
+    printk(KERN_WARNING "GPIO_IRQ: Unloading gpio_irq\n");
 }
 
 module_init(gpio_irq_init);

@@ -13,8 +13,7 @@ config-pin P8.10 out
 # P8.11 = 1/13 = GPIO 45 = userland timing pin
 config-pin P8.11 out
 
-rmmod gpio_irq_rtdm
-insmod ./gpio_irq_rtdm.ko timing_pin=68
+./reload-module.sh
 
 echo starting userland
 ./gpio-irq-test 69 45

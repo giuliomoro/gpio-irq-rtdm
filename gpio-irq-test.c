@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <sys/mman.h>
+#include <error.h>
 
 #include <native/task.h>
 #include <native/timer.h>
@@ -10,47 +11,69 @@
 #include <rtdk.h>
 #include "gpio-irq.h"
 
+#define VERBOSE
+
 RT_TASK demo_task;
 int fd;
 int pin = 69;
 int timingpin = 0;
 int tpretcode;
 
-char *rtdm_driver = "gpio_irq";
+char *rtdm_driver = "/dev/rtdm/gpio_irq";
 #define EVERY 1000
 
 
-static inline void toggle_timing_pin(void)
+static inline int toggle_timing_pin(void)
 {
     if (!timingpin)
-	return;
-    tpretcode = rt_dev_ioctl(fd, GPIO_IRQ_PIN_TOGGLE, &timingpin);
+	return 0;
+#ifdef VERBOSE
+    rt_printf("requesting GPIO_IRQ_PIN_TOGGLE %d\n", GPIO_IRQ_PIN_TOGGLE);
+#endif
+    tpretcode = ioctl(fd, GPIO_IRQ_PIN_TOGGLE, &timingpin);
+    if(tpretcode < 0)
+    {
+        rt_printf("ioctl returned %d\n", tpretcode);
+    }
+    return tpretcode;
 }
 
 void demo(void *arg)
 {
-    RTIME now, previous;
+    RTIME previous;
     int irqs = EVERY;
     struct gpio_irq_data rd = {
 	.pin = pin,
 	.falling =  0
     };
-
-    if ((fd = rt_dev_ioctl(fd,  GPIO_IRQ_BIND, &rd)) < 0) {
-	perror("rt_dev_ioctl GPIO_IRQ_BIND");
-	return;
-    }
-    
-    previous = rt_timer_read();
     int rc;
+
+#ifdef VERBOSE
+    rt_printf("requesting GPIO_IRQ_BIND %d\n", GPIO_IRQ_BIND);
+#endif
+    if ((rc = ioctl(fd,  GPIO_IRQ_BIND, &rd)) < 0) {
+	    perror("ioctl GPIO_IRQ_BIND");
+	    return;
+    }
+
+    rt_task_sleep(1);
+    previous = rt_timer_read();
     
     while (1) {
-	toggle_timing_pin();
-	toggle_timing_pin();
-	if ((rc = rt_dev_ioctl (fd,  GPIO_IRQ_PIN_WAIT, 0)) < 0) {
-	    rt_printf("rt_dev_ioctl error! rc=%d\n", rc);
-	    break;
-	}
+        if(toggle_timing_pin() < 0)
+            return;
+        if(toggle_timing_pin() < 0)
+            return;
+#ifdef VERBOSE
+        rt_printf("waiting %d\n", GPIO_IRQ_PIN_WAIT);
+#endif
+	if ((rc = ioctl (fd,  GPIO_IRQ_PIN_WAIT, 0)) < 0) {
+            rt_printf("ioctl error! rc=%d %s\n", rc, strerror(-rc));
+            break;
+        }
+#ifdef VERBOSE
+	rt_printf("resuming\n");
+#endif
 	irqs--;
 	if (!irqs)  {
 	    irqs = EVERY;
@@ -84,14 +107,16 @@ int main(int argc, char* argv[])
     rt_print_auto_init(1);
 	
     // Open RTDM driver
-    if ((fd = rt_dev_open(rtdm_driver, 0)) < 0) {
+    if ((fd = open(rtdm_driver, O_RDWR)) < 0) {
 	perror("rt_open");
 	exit(-1);
     }
+    printf("Returned fd: %d\n", fd);
 
     rt_task_create(&demo_task, "trivial", 0, 99, 0);
     rt_task_start(&demo_task, &demo, NULL);
     pause();
-    rt_task_delete(&demo_task);
+
+    close(fd);
     return 0;
 }

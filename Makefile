@@ -1,5 +1,5 @@
 # Allow overriding xeno-config on make command line
-XENO_CONFIG=xeno-config
+XENO_CONFIG=/usr/xenomai/bin/xeno-config
 
 prefix := $(shell $(XENO_CONFIG) --prefix)
 
@@ -23,7 +23,7 @@ obj-m += gpio_irq_rtdm.o
 all: gpio-irq-test gpio_irq_rtdm.ko
 	$(MAKE) -C $(KDIR) SUBDIRS=$(PWD) modules
 
-gpio_irq_rtdm.ko: gpio-irq.h
+gpio_irq_rtdm.ko: gpio-irq.h gpio_irq_rtdm.c
 
 gpio-irq-test: gpio-irq-test.c gpio-irq.h
 	$(CC) -o $@ $< $(STD_CFLAGS) $(STD_LDFLAGS)
