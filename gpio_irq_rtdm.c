@@ -45,9 +45,11 @@ module_param(completions, int, 0644);
 
 static inline void toggle_timing_pin(void)
 {
+    static int value = 0;
     if (!timing_pin)
 	return;
-    gpio_set_value(timing_pin, !gpio_get_value(timing_pin));
+    value = 1 - value;
+    gpio_set_value(timing_pin, value);
 }
 #else
 #define toggle_timing_pin()

@@ -11,7 +11,7 @@
 #include <rtdk.h>
 #include "gpio-irq.h"
 
-#define VERBOSE
+#undef VERBOSE
 
 RT_TASK demo_task;
 int fd;
@@ -28,7 +28,7 @@ static inline int toggle_timing_pin(void)
     if (!timingpin)
 	return 0;
 #ifdef VERBOSE
-    rt_printf("requesting GPIO_IRQ_PIN_TOGGLE %d\n", GPIO_IRQ_PIN_TOGGLE);
+    rt_printf("requesting GPIO_IRQ_PIN_TOGGLE %d on the timing pin %d\n", GPIO_IRQ_PIN_TOGGLE, timingpin);
 #endif
     tpretcode = ioctl(fd, GPIO_IRQ_PIN_TOGGLE, &timingpin);
     if(tpretcode < 0)
@@ -49,7 +49,7 @@ void demo(void *arg)
     int rc;
 
 #ifdef VERBOSE
-    rt_printf("requesting GPIO_IRQ_BIND %d\n", GPIO_IRQ_BIND);
+    rt_printf("requesting GPIO_IRQ_BIND %d on the pin %d\n", GPIO_IRQ_BIND, pin);
 #endif
     if ((rc = ioctl(fd,  GPIO_IRQ_BIND, &rd)) < 0) {
 	    perror("ioctl GPIO_IRQ_BIND");
@@ -60,25 +60,25 @@ void demo(void *arg)
     previous = rt_timer_read();
     
     while (1) {
-        if(toggle_timing_pin() < 0)
-            return;
-        if(toggle_timing_pin() < 0)
-            return;
 #ifdef VERBOSE
-        rt_printf("waiting %d\n", GPIO_IRQ_PIN_WAIT);
+        rt_printf("waiting %d for pin %d\n", GPIO_IRQ_PIN_WAIT, pin);
 #endif
 	if ((rc = ioctl (fd,  GPIO_IRQ_PIN_WAIT, 0)) < 0) {
             rt_printf("ioctl error! rc=%d %s\n", rc, strerror(-rc));
             break;
         }
+        if(toggle_timing_pin() < 0)
+            return;
+        if(toggle_timing_pin() < 0)
+            return;
 #ifdef VERBOSE
 	rt_printf("resuming\n");
-#endif
 	irqs--;
 	if (!irqs)  {
 	    irqs = EVERY;
 	    rt_printf("%d IRQs, tpretcode=%d\n",EVERY, tpretcode);
 	}  
+#endif
     }
 }
 
