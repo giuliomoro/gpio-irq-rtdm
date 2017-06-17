@@ -9,11 +9,11 @@ endif
 
 PWD:= $(shell pwd)
 KDIR := /lib/modules/$(shell uname -r)/build
-CC := $(shell $(XENO_CONFIG) --skin=native --cc)
-STD_CFLAGS  := $(shell $(XENO_CONFIG) --skin=native --skin=rtdm --cflags) -I. -g
-STD_LDFLAGS := $(shell $(XENO_CONFIG) --skin=native --skin=rtdm --ldflags) -g 
+CC := $(shell $(XENO_CONFIG) --skin=cobalt --cc)
+STD_CFLAGS  := $(shell $(XENO_CONFIG) --skin=cobalt --skin=rtdm --cflags) -I. -g
+STD_LDFLAGS := $(shell $(XENO_CONFIG) --skin=cobalt --skin=rtdm --ldflags) -g 
 
-EXTRA_CFLAGS += $(shell $(XENO_CONFIG) --skin=native --skin=rtdm --cflags)
+EXTRA_CFLAGS += $(shell $(XENO_CONFIG) --skin=cobalt --skin=rtdm --cflags)
 
 EXTRA_CFLAGS += $(CFLAGS)
 

@@ -4,20 +4,20 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include <error.h>
+#include <string.h>
 
-#include <native/task.h>
-#include <native/timer.h>
+#include <pthread.h>
 #include <rtdm/rtdm.h>
-#include <rtdk.h>
 #include "gpio-irq.h"
 
 #undef VERBOSE
 
-RT_TASK demo_task;
+pthread_t demo_task;
 int fd;
 int pin = 69;
 int timingpin = 0;
 int tpretcode;
+int gShouldStop = 0;
 
 char *rtdm_driver = "/dev/rtdm/gpio_irq";
 #define EVERY 1000
@@ -28,19 +28,18 @@ static inline int toggle_timing_pin(void)
     if (!timingpin)
 	return 0;
 #ifdef VERBOSE
-    rt_printf("requesting GPIO_IRQ_PIN_TOGGLE %d on the timing pin %d\n", GPIO_IRQ_PIN_TOGGLE, timingpin);
+    printf("requesting GPIO_IRQ_PIN_TOGGLE %d on the timing pin %d\n", GPIO_IRQ_PIN_TOGGLE, timingpin);
 #endif
     tpretcode = ioctl(fd, GPIO_IRQ_PIN_TOGGLE, &timingpin);
     if(tpretcode < 0)
     {
-        rt_printf("ioctl returned %d\n", tpretcode);
+        printf("ioctl returned %d\n", tpretcode);
     }
     return tpretcode;
 }
 
-void demo(void *arg)
+void* demo(void *arg)
 {
-    RTIME previous;
     int irqs = EVERY;
     struct gpio_irq_data rd = {
 	.pin = pin,
@@ -48,38 +47,40 @@ void demo(void *arg)
     };
     int rc;
 
+    pthread_setname_np(pthread_self(), "trivial");
+    struct sched_param  param = { .sched_priority = 99 };
+    pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+
 #ifdef VERBOSE
-    rt_printf("requesting GPIO_IRQ_BIND %d on the pin %d\n", GPIO_IRQ_BIND, pin);
+    printf("requesting GPIO_IRQ_BIND %d on the pin %d\n", GPIO_IRQ_BIND, pin);
 #endif
     if ((rc = ioctl(fd,  GPIO_IRQ_BIND, &rd)) < 0) {
 	    perror("ioctl GPIO_IRQ_BIND");
-	    return;
+	    return (void*)-2;
     }
 
-    rt_task_sleep(1);
-    previous = rt_timer_read();
-    
-    while (1) {
+    while (!gShouldStop) {
 #ifdef VERBOSE
-        rt_printf("waiting %d for pin %d\n", GPIO_IRQ_PIN_WAIT, pin);
+        printf("waiting %d for pin %d\n", GPIO_IRQ_PIN_WAIT, pin);
 #endif
 	if ((rc = ioctl (fd,  GPIO_IRQ_PIN_WAIT, 0)) < 0) {
-            rt_printf("ioctl error! rc=%d %s\n", rc, strerror(-rc));
+            printf("ioctl error! rc=%d %s\n", rc, strerror(-rc));
             break;
         }
         if(toggle_timing_pin() < 0)
-            return;
+            return (void*)-1;
         if(toggle_timing_pin() < 0)
-            return;
+            return (void*)-1;
 #ifdef VERBOSE
-	rt_printf("resuming\n");
+	printf("resuming\n");
 	irqs--;
 	if (!irqs)  {
 	    irqs = EVERY;
-	    rt_printf("%d IRQs, tpretcode=%d\n",EVERY, tpretcode);
+	    printf("%d IRQs, tpretcode=%d\n",EVERY, tpretcode);
 	}  
 #endif
     }
+    return (void*)0;
 }
 
 void catch_signal(int sig)
@@ -87,7 +88,7 @@ void catch_signal(int sig)
     fprintf (stderr, "catch_signal sig=%d\n", sig);
     signal(SIGTERM,  SIG_DFL);
     signal(SIGINT, SIG_DFL);
-    rt_task_delete(&demo_task);
+    gShouldStop = 0;
 }
 
 int main(int argc, char* argv[])
@@ -103,9 +104,6 @@ int main(int argc, char* argv[])
     /* Avoids memory swapping for this program */
     mlockall(MCL_CURRENT|MCL_FUTURE);
 
-    // Init rt_printf() system
-    rt_print_auto_init(1);
-	
     // Open RTDM driver
     if ((fd = open(rtdm_driver, O_RDWR)) < 0) {
 	perror("rt_open");
@@ -113,9 +111,12 @@ int main(int argc, char* argv[])
     }
     printf("Returned fd: %d\n", fd);
 
-    rt_task_create(&demo_task, "trivial", 0, 99, 0);
-    rt_task_start(&demo_task, &demo, NULL);
-    pause();
+    pthread_create(&demo_task, NULL, demo, NULL);
+
+    void* ret;
+    pthread_join(demo_task, &ret);
+    int iret = (int)ret;
+    printf("Returned: %d\n", iret);
 
     close(fd);
     return 0;
